@@ -142,26 +142,28 @@ func returnUrl(r *http.Request) string {
 func redirectUri(r *http.Request) string {
 	if use, _ := useAuthDomain(r); use {
 		proto := r.Header.Get("X-Forwarded-Proto")
-		return fmt.Sprintf("%s://%s%s", proto, config.AuthHost, config.Path)
+		authhost, err := getAuthHost(r.Header.Get("X-Forwarded-Host"))
+		if err == nil {
+			return fmt.Sprintf("%s://%s%s", proto, authhost, config.Path)
+		}
 	}
-
 	return fmt.Sprintf("%s%s", redirectBase(r), config.Path)
 }
 
 // Should we use auth host + what it is
 func useAuthDomain(r *http.Request) (bool, string) {
-	if config.AuthHost == "" {
+	if len(config.AuthHosts) == 0 {
 		return false, ""
 	}
-
 	// Does the request match a given cookie domain?
 	reqMatch, reqHost := matchCookieDomains(r.Header.Get("X-Forwarded-Host"))
 
 	// Do any of the auth hosts match a cookie domain?
-	authMatch, authHost := matchCookieDomains(config.AuthHost)
+	//authMatch, _ := matchCookieDomains(config.AuthHost)
 
 	// We need both to match the same domain
-	return reqMatch && authMatch && reqHost == authHost, reqHost
+	// return reqMatch && authMatch && reqHost == authHost, reqHost
+	return reqMatch, reqHost
 }
 
 // Cookie methods
@@ -399,4 +401,16 @@ func (c *CookieDomains) MarshalFlag() (string, error) {
 		domains = append(domains, d.Domain)
 	}
 	return strings.Join(domains, ","), nil
+}
+
+// get correct redirect url
+func getAuthHost(host string) (string, error) {
+	for _, authHost := range config.AuthHosts {
+		hostlist := strings.Split(host, ".")
+		hostdomain := strings.Join(hostlist[len(hostlist)-2:], ".")
+		if strings.Contains(authHost, hostdomain) {
+			return authHost, nil
+		}
+	}
+	return "", fmt.Errorf("no suitable auth host found for %s ", host)
 }
